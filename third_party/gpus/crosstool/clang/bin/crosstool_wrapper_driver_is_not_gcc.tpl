@@ -39,6 +39,9 @@ from __future__ import print_function
 __author__ = 'keveman@google.com (Manjunath Kudlur)'
 
 from argparse import ArgumentParser
+import errno
+import shutil
+import tempfile
 import os
 import subprocess
 import re
@@ -225,17 +228,26 @@ def InvokeNvcc(argv, log=False):
     if exit_status != 0:
       return exit_status
 
-  cmd = (NVCC_PATH + ' ' + nvccopts +
+  keepdir = tempfile.mkdtemp()
+  try:
+    war_filename = os.path.join(keepdir, "workaround_nvbug_2528412.c")
+    token = re.sub(r'\W', '_', out_file[0])
+    with open(war_filename, "w") as f:
+      f.write('extern "C" char __random_marker_%s() { return 0; }\n' % token)
+    cmd = (NVCC_PATH + ' ' + nvccopts +
          ' --compiler-options "' + host_compiler_options + ' -fPIC"' +
          ' --compiler-bindir=' + GCC_HOST_COMPILER_PATH +
          ' -I .' +
+         ' -keep -keep-dir ' + keepdir + ' -include ' + war_filename +
          ' -x cu ' + opt + includes + ' -c ' + srcs + out)
 
-  # TODO(zhengxq): for some reason, 'gcc' needs this help to find 'as'.
-  # Need to investigate and fix.
-  cmd = 'PATH=' + PREFIX_DIR + ':$PATH ' + cmd
-  if log: Log(cmd)
-  return os.system(cmd)
+    # TODO(zhengxq): for some reason, 'gcc' needs this help to find 'as'.
+    # Need to investigate and fix.
+    cmd = 'PATH=' + PREFIX_DIR + ':$PATH ' + cmd
+    if log: Log(cmd)
+    return os.system(cmd)
+  finally:
+    shutil.rmtree(keepdir)
 
 
 def main():
